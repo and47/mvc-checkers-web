@@ -102,7 +102,7 @@ class Board(Grid):
         else:
             super().__init__(*test_board.shape[::-1])
             self.checkerboard = test_board
-        self.game_over = False
+        self.game_over_winner = False
         self.enemies_to_remove = set()
         self.restricted_selection = False  # if just jumped (captured), Player needs to continue with same piece
         self.selection_piece_rc = None
@@ -187,7 +187,8 @@ class Board(Grid):
                 return True
         return False
 
-    def _allowed_moves(self, jump_only: bool = False, piece_val: int | None = None, piece_rc: tuple[int, int] | None = None):
+    def _allowed_moves(self, jump_only: bool = False, enemies_already_jumped_over: set[tuple[int, int]] = set(),
+                       piece_val: int | None = None, piece_rc: tuple[int, int] | None = None):
         if piece_val is None and piece_rc is None:
             piece_val, piece_rc = self.selection_piece_rc  # piece_val is type+owner coded as int
         piece_val = Board.actmap['unselect'](piece_val)  # removes selection info
@@ -200,18 +201,17 @@ class Board(Grid):
             dirs = product({-1, 1}, repeat=2)
             for dr, dc in dirs:
                 ri, ci = r, c = piece_rc
-                traversing = True
                 enemies_this_direction = set()
                 enemy_encountered_last = False
-                while traversing:
+                while True:  # traversing one of 4 directions
                     new_rc = ri, ci = ri + dr, ci + dc
                     # if (0 > ri >= self.h) or (0 > ci >= self.w) or \
                     if new_rc not in self.set_rc_coordinates or \
                         self.checkerboard[new_rc] in Board.ownermap[self.current_player]:  # own piece or out of board
                         break
                     elif self.checkerboard[new_rc] in enemy_man_king:
-                        if enemy_encountered_last or new_rc in self.enemies_to_remove:  # second in a row (or more)
-                            break
+                        if enemy_encountered_last or new_rc in enemies_already_jumped_over:
+                            break  # second enemy piece in a row or already jumped over piece
                         enemy_encountered_last = True
                         enemies_this_direction.add(new_rc)
                     else:  # empty black
@@ -230,7 +230,7 @@ class Board(Grid):
         else:
             nearbies = self.get_diags_neighbors(piece_rc)  # checks also for opportunities to attack backward (not in English/American rules)
             enemies_nearby = {rc for rc in nearbies if (self.checkerboard[rc] in enemy_man_king) and
-                              (rc not in self.enemies_to_remove)}  # only on 2nd+ (cont.) jump
+                              (rc not in enemies_already_jumped_over)}  # only on 2nd+ (cont.) jump
             if not jump_only:
                 fronts = self._get_forward_dirs(origin=piece_rc, destinations=nearbies)
                 empty_fronts = {rc for rc in fronts if self.checkerboard[rc] == Board.intmap['empty_dark']}
@@ -261,8 +261,7 @@ class Board(Grid):
         if self.enemy_encountered[to]:
             jumped_over_enemies_coords = self.enemy_encountered[to]
             self.enemies_to_remove.update(jumped_over_enemies_coords)
-            self.enemy_encountered.clear()
-            self._allowed_moves(jump_only=True)
+            self._allowed_moves(jump_only=True, enemies_already_jumped_over=self.enemies_to_remove)
             # enemies remain to jump over, expect player to perform those jumps with that piece (can be multiple paths):
             if self.allowed_destinations:
                 self.restricted_selection = True  # same player continues (can capture at least 1 more enemy with the piece)
@@ -272,22 +271,28 @@ class Board(Grid):
         self._finish_move()
 
     def _finish_move(self):
-        self._remove_enemies()
         old_player = self.current_player
         new_player = self.current_player = self.switch_current_player()
+        if self.enemies_to_remove:
+            self._remove_enemies()
+            self.enemies_to_remove.clear()
+            if not self._any_pieces_left(new_player):
+                self.declare_winner(old_player)
         self.allowed_destinations.clear()
         self.selection_piece_rc = None
         self.restricted_selection = False
         if not self._can_move(new_player):
-            self.game_over = self.winner = Board.actmap['crown'](old_player)
+            self.declare_winner(old_player)
 
     def _remove_enemies(self):
-        if self.enemies_to_remove:
-            for enemy_rc in self.enemies_to_remove:
-                self.checkerboard[enemy_rc] = Board.intmap['empty_dark']
-            self.enemies_to_remove.clear()
-            if not np.isin(self.checkerboard, Board.enemymap[self.current_player]).any():  # victory check (any enemies)
-                self.game_over = self.winner = Board.actmap['crown'](self.current_player)
+        for enemy_rc in self.enemies_to_remove:
+            self.checkerboard[enemy_rc] = Board.intmap['empty_dark']
+
+    def _any_pieces_left(self, player: int) -> bool:
+        return np.isin(self.checkerboard, Board.ownermap[player]).any()  # victory check (any enemies)
+
+    def declare_winner(self, player: int):
+        self.game_over_winner = Board.actmap['crown'](player)
 
     def _is_crowned(self, piece_val: int) -> bool:  # should be unselected piece
         return bool(piece_val - (self.current_player - 1) - 1)  # NB. P2 has +1 to val, crown adds +2, selection +4

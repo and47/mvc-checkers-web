@@ -49,6 +49,11 @@
         function renderGrid(gameState) {
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
+            // Get the number of columns from the first inner list length:
+            const columns = gameState.board[0].length;
+
+            // Set the grid-template-columns property dynamically:
+            grid.style.gridTemplateColumns = `repeat(${columns}, 60px)`;
             gameState.board.forEach((row, r) => {
                 row.forEach((cell, c) => {
                     const div = document.createElement('div');
