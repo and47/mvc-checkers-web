@@ -16,7 +16,7 @@ class FastAPIView:
 
     def create_routes(self):
         # Mount the static directory to serve index.html and assets
-        self.app.mount("/static", StaticFiles(directory="static"), name="static")
+        self.app.mount("/static", StaticFiles(directory="./view/static"), name="static")
 
         @self.app.get("/state")
         def get_state():
@@ -31,7 +31,7 @@ class FastAPIView:
 
         @self.app.get("/", response_class=HTMLResponse)
         async def read_index():
-            with open("static/index.html") as f:
+            with open("view/static/index.html") as f:
                 return HTMLResponse(content=f.read(), status_code=200)
 
     def get_app(self):
@@ -39,8 +39,8 @@ class FastAPIView:
         return self.app
 
 
-def run_server(board_info: list[list[int]], **kwargs):
-    game_state = Game(board_info)
+def run_server(board_info: 'GameRound', **kwargs):
+    game_state = Game(board_info.boardview_aslist())
     fastapi_view = FastAPIView(game_state)
     import uvicorn
     import threading
@@ -72,6 +72,10 @@ class Game:
     def __init__(self, board_info: list[list[int]]):
         self.board = board_info
         self.moves = []
+        self.is_async = True
 
-    def update_board(self, new_value_list: list[list[int]]):
-        self.board = new_value_list
+    def update_board(self, updated_board: list[list[int]]):
+        self.board = updated_board.boardview_aslist()  # get a list (not np.ndarray) consumable by JS
+
+    def show_winner(self, winner: int):
+        self.board = [[winner]]  # re-use same grid object for display

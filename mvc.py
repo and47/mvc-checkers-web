@@ -1,62 +1,64 @@
-from engine import Board
-from web import run_local_webserver
+from view.web import run_local_webserver
+from model.engine import GameRound
 from typing import Callable
-from time import sleep, time
+from time import sleep
+import sys
 
 
 class CheckersController:
 
-    def __init__(self, game_settings = None, game_model: 'Board' = Board, ux: 'View' | Callable = run_local_webserver):
-        self.game_model = game_model()
-        ux_server = ux(board_info=self.game_model.as_list())  # View and User inputs
+    def __init__(self, game_settings: dict | None = None, game_model: 'GameRound' = GameRound,
+                 ux: 'View' | Callable = run_local_webserver):
+        self.game_model = game_model() if game_settings is None else game_model(**game_settings)
+        ux_server = ux(board_info=self.game_model)  # View and User inputs
         self.server, self.server_thread, self.ux_state = ux_server
-        self.players_moves = self.ux_state.moves
+        self.player_clicks = self.ux_state.moves
         self.board_view = self.ux_state.board
 
     def start_game(self, bot_strategy: Callable | None = None):
+        game, moves = self.game_model, self.player_clicks  # shorten names
+        get_action = self.get_user_click if bot_strategy is None else self._feed(bot_strategy)
+        # starting_time = time()
 
-        game, moves = self.game_model, self.players_moves  # shorten names
-        get_move = self.get_user_move if bot_strategy is None else self._feed(bot_strategy)
-        starting_time = time()
-
-        while not game.game_over:  # make a generator loop?
+        while not game.over:  # make a generator loop?
             try:
-                move = get_move()
-                if move:
-                    square_rowcol = move
-                    affected_cells = game.action(square_rowcol=square_rowcol)
-                    if affected_cells:  # universal engine, in other games may be used, in minesweeper always True
-                        self.ux_state.update_board(game.as_list())
-                        # print(self.board_view)
-                        # print(game)
-                # view.clock = time() - starting_time  # display time passed for the player
+                input_action = get_action()
+                if square_rowcol := input_action:
+                    ui_updates = game.action(square_rowcol=square_rowcol)
+                    if ui_updates or self.server is None:  # universal engine, in other games may be used, in minesweeper always True
+                        if ui_updates: ui_updates.pop(0)  # redundant container but tracks that all updates were rendered
+                        self.ux_state.update_board(game)
+                        # print(game.board)
+                # game.clock = time() - starting_time  # to record time passed for sport
             except KeyboardInterrupt:
                 print("Shutting down server...")
                 self.server.should_exit = True
                 self.server_thread.join()
-                print("Server shut down.")
+                print("Server shut down. Killing PID")
+                sys.exit(4)
             except Exception as e:
                 import traceback
                 self.server.should_exit = True
                 self.server_thread.join()
                 print(f"An error occurred: {e}")
                 traceback.print_exc()
+                sys.exit(4)
 
-        self.ux_state.update_board([[game.winner]])  # show winner top-left
+        self.ux_state.show_winner(game.over)  # show winner top-left
         return
 
     def _feed(self, bot_strategy: Callable) -> Callable:
         pass
 
-    def get_user_move(self) -> tuple[int, int] | None:
-        """Checks for and returns a valid user input (i.e. change in a cell on the grid/minefield range)"""
+    def get_user_click(self) -> tuple[int, int] | None:
+        """Checks for and returns a valid user input (i.e. click of a cell on the grid/board)"""
         try:
-            sleep(0.1)  # poll user (not bot) "move" every second
-            if self.players_moves:
-                move = self.players_moves.pop()
-                move = move.r, move.c
+            sleep(0.1)  # poll user (not bot) "selection" every second
+            if self.player_clicks:
+                board_square = self.player_clicks.pop()
+                rowcol = board_square.r, board_square.c
             else:
-                move = None
-            return move
+                rowcol = None
+            return rowcol
         except Exception as e:
             raise
