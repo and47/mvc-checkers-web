@@ -16,20 +16,17 @@ class CheckersController:
         self.board_view = self.ux_state.board
 
     def start_game(self, bot_strategy: Callable | None = None):
-        game, moves = self.game_model, self.player_clicks  # shorten names
+        game = self.game_model
+        self.ux_state.update_board(game)
         get_action = self.get_user_click if bot_strategy is None else self._feed(bot_strategy)
-        # starting_time = time()
 
         while not game.over:  # make a generator loop?
             try:
                 input_action = get_action()
                 if square_rowcol := input_action:
                     ui_updates = game.action(square_rowcol=square_rowcol)
-                    if ui_updates or self.server is None:  # universal engine, in other games may be used, in minesweeper always True
-                        if ui_updates: ui_updates.pop(0)  # redundant container but tracks that all updates were rendered
+                    if (ui_updates and ui_updates.pop()) or self.server is None:
                         self.ux_state.update_board(game)
-                        # print(game.board)
-                # game.clock = time() - starting_time  # to record time passed for sport
             except KeyboardInterrupt:
                 print("Shutting down server...")
                 self.server.should_exit = True

@@ -8,7 +8,7 @@ class Grid:
     def __init__(self, w: int, h: int):
         self.dims = self.h, self.w = h, w
         self.rc_coordinates = self.generate_coords(w, h)  # rc is rowcol
-        self.set_rc_coordinates = {c for c in self.rc_coordinates.flatten()}
+        self.set_rc_coordinates = {c for c in self.rc_coordinates.ravel()}
 
     @staticmethod
     def generate_coords(w: int, h: int, convention: str = 'numpy') -> np.ndarray:
@@ -67,13 +67,16 @@ class Board(Grid):
                 checkerboard[max(mid)+1:][rc_bottom] = PieceType.P1
         return checkerboard
 
+    @property
+    def pretty(self):
+        return np.fromiter(PieceChar.all_sorted(), dtype=object)[self.val_arr]
+
     def __str__(self):
         indent = '  '
         top_panel = list(ascii_uppercase[:self.w])
-        pretty_grid = np.fromiter(PieceChar.all_sorted(), dtype=object)[self.val_arr]
         out = ['', indent + '   ' + ' '.join(top_panel), indent + ' ' + ''.join(['--' for _ in top_panel]) + '--']
         for r in range(self.h):
-            out.append(f'{self.h - r: <2}' + '|' + indent + ' '.join(pretty_grid[r, :]))
+            out.append(f'{self.h - r: <2}' + '|' + indent + ' '.join(self.pretty[r, :]))
         return '\n'.join(out)
 
     def remove_enemies(self, enemies_to_remove: set[tuple[int, int]]):
@@ -109,8 +112,6 @@ class Board(Grid):
         return rcs
 
 
-from enum import IntEnum, Enum
-
 class Owner(IntEnum):
     P1 = 1  # whites start but can switch color here, e.g. P2 playing whites
     P2 = 2
@@ -126,6 +127,10 @@ class PieceType(IntEnum):
     SELECTED_2 = 6
     SELECTED_3 = 7
     SELECTED_4 = 8
+
+    @classmethod
+    def is_piece(cls, value):
+        return value not in {cls.EMPTY_DARK, cls.EMPTY_LIGHT}
 
     @classmethod
     def select(cls, value):
